@@ -1,0 +1,181 @@
+@page "/employees"
+@attribute [Authorize]
+@inject IEmployeeService EmployeeService
+@inject ToastService ToastService
+
+<PageTitle>Employees</PageTitle>
+
+<h1 class="section-title">Employee Registration</h1>
+
+<div class="card-soft p-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Registered Employees</h5>
+        <button class="btn btn-primary" type="button" @onclick="OpenCreateModal">Create Employee</button>
+    </div>
+
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th class="text-end">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var employee in employees)
+            {
+                <tr>
+                    <td>@employee.EmployeeCode</td>
+                    <td>@employee.FullName</td>
+                    <td>@employee.Department</td>
+                    <td>@(employee.IsActive ? "Active" : "Inactive")</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => OpenEditModal(employee)">Edit</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showEmployeeModal)
+{
+    <div class="modal-backdrop-soft" @onclick="CloseModal">
+        <div class="modal-shell" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">@(isEditMode ? "Update Employee" : "Create Employee")</h5>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="CloseModal">Close</button>
+            </div>
+
+            <EditForm Model="form" OnValidSubmit="SaveEmployeeAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="mb-3">
+                    <label class="form-label">Employee Code</label>
+                    <InputText class="form-control" @bind-Value="form.EmployeeCode" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Full Name</label>
+                    <InputText class="form-control" @bind-Value="form.FullName" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Department</label>
+                    <InputText class="form-control" @bind-Value="form.Department" />
+                </div>
+
+                @if (isEditMode)
+                {
+                    <div class="form-check mb-3">
+                        <InputCheckbox class="form-check-input" @bind-Value="form.IsActive" />
+                        <label class="form-check-label">Is Active</label>
+                    </div>
+                }
+
+                <div class="d-flex justify-content-end gap-2">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" type="submit">@(isEditMode ? "Update" : "Create")</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private EmployeeForm form = new();
+    private List<EmployeeModel> employees = [];
+    private bool showEmployeeModal;
+    private bool isEditMode;
+    private Guid? editingEmployeeId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEmployeesAsync();
+    }
+
+    private void OpenCreateModal()
+    {
+        isEditMode = false;
+        editingEmployeeId = null;
+        form = new EmployeeForm();
+        showEmployeeModal = true;
+    }
+
+    private void OpenEditModal(EmployeeModel employee)
+    {
+        isEditMode = true;
+        editingEmployeeId = employee.Id;
+        form = new EmployeeForm
+        {
+            EmployeeCode = employee.EmployeeCode,
+            FullName = employee.FullName,
+            Department = employee.Department,
+            IsActive = employee.IsActive
+        };
+        showEmployeeModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showEmployeeModal = false;
+    }
+
+    private async Task SaveEmployeeAsync()
+    {
+        try
+        {
+            if (isEditMode && editingEmployeeId is Guid employeeId)
+            {
+                await EmployeeService.UpdateAsync(new UpdateEmployeeRequest(
+                    employeeId,
+                    form.EmployeeCode,
+                    form.FullName,
+                    form.Department,
+                    form.IsActive));
+
+                ToastService.Success($"Employee {form.FullName} updated.");
+            }
+            else
+            {
+                await EmployeeService.CreateAsync(new CreateEmployeeRequest(
+                    form.EmployeeCode,
+                    form.FullName,
+                    form.Department));
+
+                ToastService.Success($"Employee {form.FullName} registered.");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            ToastService.Error(ex.Message);
+            return;
+        }
+
+        CloseModal();
+        await LoadEmployeesAsync();
+    }
+
+    private async Task LoadEmployeesAsync()
+    {
+        employees = (await EmployeeService.GetAllAsync()).ToList();
+    }
+
+    private sealed class EmployeeForm
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(20)]
+        public string EmployeeCode { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(120)]
+        public string FullName { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(80)]
+        public string Department { get; set; } = string.Empty;
+
+        public bool IsActive { get; set; } = true;
+    }
+}

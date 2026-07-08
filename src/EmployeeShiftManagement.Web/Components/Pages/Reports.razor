@@ -1,0 +1,120 @@
+@page "/reports"
+@attribute [Authorize]
+@inject IReportService ReportService
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Reports</PageTitle>
+
+<h1 class="section-title">Shift Reports</h1>
+
+<div class="card-soft p-3 mb-3">
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+        <div>
+            <label class="form-label">From</label>
+            <InputDate class="form-control" @bind-Value="fromDate" />
+        </div>
+        <div>
+            <label class="form-label">To</label>
+            <InputDate class="form-control" @bind-Value="toDate" />
+        </div>
+        <button class="btn btn-outline-primary" @onclick="SetDaily">Daily</button>
+        <button class="btn btn-outline-primary" @onclick="SetWeekly">Weekly</button>
+        <button class="btn btn-outline-primary" @onclick="SetMonthly">Monthly</button>
+        <button class="btn btn-outline-primary" @onclick="SetYearly">Yearly</button>
+        <button class="btn btn-primary" @onclick="GenerateAsync">Generate</button>
+        <button class="btn btn-success" @onclick="ExportExcelAsync" disabled="@(report is null || report.Rows.Count == 0)">
+            Export Excel
+        </button>
+    </div>
+</div>
+
+@if (report is not null)
+{
+    <div class="card-soft p-3">
+        <div class="d-flex justify-content-between">
+            <div><strong>Rows:</strong> @report.Rows.Count</div>
+            <div><strong>Total Hours:</strong> @report.TotalHours.ToString("0.##")</div>
+        </div>
+
+        <table class="table table-hover mt-3">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Employee</th>
+                    <th>Dept</th>
+                    <th>Shift</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Hours</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in report.Rows)
+                {
+                    <tr>
+                        <td>@row.ShiftDate.ToString("yyyy-MM-dd")</td>
+                        <td>@row.EmployeeName (@row.EmployeeCode)</td>
+                        <td>@row.Department</td>
+                        <td>@row.ShiftName</td>
+                        <td>@row.StartTime.ToString("HH:mm")</td>
+                        <td>@row.EndTime.ToString("HH:mm")</td>
+                        <td>@row.WorkedHours.ToString("0.##")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private DateOnly fromDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly toDate = DateOnly.FromDateTime(DateTime.Today);
+    private ShiftReportResult? report;
+
+    private async Task GenerateAsync()
+    {
+        report = await ReportService.BuildAsync(fromDate, toDate);
+    }
+
+    private void SetDaily()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        fromDate = today;
+        toDate = today;
+    }
+
+    private void SetWeekly()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var offsetToMonday = ((int)today.DayOfWeek + 6) % 7;
+        var start = today.AddDays(-offsetToMonday);
+        fromDate = start;
+        toDate = start.AddDays(6);
+    }
+
+    private void SetMonthly()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        fromDate = new DateOnly(today.Year, today.Month, 1);
+        toDate = fromDate.AddMonths(1).AddDays(-1);
+    }
+
+    private void SetYearly()
+    {
+        var year = DateTime.Today.Year;
+        fromDate = new DateOnly(year, 1, 1);
+        toDate = new DateOnly(year, 12, 31);
+    }
+
+    private async Task ExportExcelAsync()
+    {
+        if (report is null)
+        {
+            return;
+        }
+
+        var content = await ReportService.ExportExcelAsync(report);
+        using var streamRef = new DotNetStreamReference(new MemoryStream(content));
+        await JsRuntime.InvokeVoidAsync("downloadFileFromStream", "shift-report.xlsx", streamRef);
+    }
+}

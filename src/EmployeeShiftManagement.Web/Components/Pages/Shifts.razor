@@ -1,0 +1,192 @@
+@page "/shifts"
+@attribute [Authorize]
+@inject IShiftService ShiftService
+@inject ToastService ToastService
+
+<PageTitle>Shifts</PageTitle>
+
+<h1 class="section-title">Shift Menu</h1>
+
+<div class="card-soft p-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Shift Definitions</h5>
+        <button class="btn btn-primary" type="button" @onclick="OpenCreateModal">Create Shift</button>
+    </div>
+
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Shift Name</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Status</th>
+                <th class="text-end">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var shift in shifts)
+            {
+                <tr>
+                    <td>@shift.Name</td>
+                    <td>@shift.StartTime.ToString("HH:mm")</td>
+                    <td>@shift.EndTime.ToString("HH:mm")</td>
+                    <td>@(shift.IsActive ? "Active" : "Inactive")</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => OpenEditModal(shift)">Edit</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal)
+{
+    <div class="modal-backdrop-soft" @onclick="CloseModal">
+        <div class="modal-shell" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">@(isEditMode ? "Update Shift" : "Create Shift")</h5>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="CloseModal">Close</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="alert alert-danger">@errorMessage</div>
+            }
+
+            <EditForm Model="form" OnValidSubmit="SaveAsync">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Shift Name</label>
+                        <InputText class="form-control" @bind-Value="form.Name" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Start</label>
+                        <InputText class="form-control" type="time" @bind-Value="form.StartTime" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End</label>
+                        <InputText class="form-control" type="time" @bind-Value="form.EndTime" />
+                    </div>
+                    @if (isEditMode)
+                    {
+                        <div class="col-md-12">
+                            <div class="form-check mt-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="form.IsActive" />
+                                <label class="form-check-label">Is Active</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="mt-3 d-flex justify-content-end gap-2">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" type="submit">@(isEditMode ? "Update" : "Create")</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ShiftDefinitionModel> shifts = [];
+    private ShiftForm form = new();
+    private bool showModal;
+    private bool isEditMode;
+    private Guid? editingId;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        shifts = (await ShiftService.GetShiftDefinitionsAsync()).ToList();
+    }
+
+    private void OpenCreateModal()
+    {
+        isEditMode = false;
+        editingId = null;
+        errorMessage = null;
+        form = new ShiftForm();
+        showModal = true;
+    }
+
+    private void OpenEditModal(ShiftDefinitionModel shift)
+    {
+        isEditMode = true;
+        editingId = shift.Id;
+        errorMessage = null;
+        form = new ShiftForm
+        {
+            Name = shift.Name,
+            StartTime = shift.StartTime.ToString("HH:mm"),
+            EndTime = shift.EndTime.ToString("HH:mm"),
+            IsActive = shift.IsActive
+        };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(form.Name))
+        {
+            errorMessage = "Shift name is required.";
+            return;
+        }
+
+        if (!TimeOnly.TryParse(form.StartTime, out var start) || !TimeOnly.TryParse(form.EndTime, out var end))
+        {
+            errorMessage = "Enter valid start and end times.";
+            return;
+        }
+
+        try
+        {
+            if (isEditMode && editingId is Guid id)
+            {
+                await ShiftService.UpdateShiftDefinitionAsync(new UpdateShiftDefinitionRequest(
+                    id,
+                    form.Name,
+                    start,
+                    end,
+                    form.IsActive));
+                ToastService.Success("Shift updated.");
+            }
+            else
+            {
+                await ShiftService.CreateShiftDefinitionAsync(new CreateShiftDefinitionRequest(
+                    form.Name,
+                    start,
+                    end));
+                ToastService.Success("Shift created.");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            ToastService.Error(ex.Message);
+            return;
+        }
+
+        CloseModal();
+        await LoadAsync();
+    }
+
+    private sealed class ShiftForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string StartTime { get; set; } = "08:00";
+        public string EndTime { get; set; } = "16:00";
+        public bool IsActive { get; set; } = true;
+    }
+}

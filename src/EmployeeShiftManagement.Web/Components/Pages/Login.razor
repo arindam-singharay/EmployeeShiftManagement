@@ -1,0 +1,56 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+<PageTitle>Login</PageTitle>
+
+<h1 class="section-title">User Login</h1>
+
+<div class="row justify-content-center mt-3">
+    <div class="col-md-5 col-lg-4">
+        <div class="card-soft p-4">
+            @if (HasError)
+            {
+                <div class="alert alert-danger">Invalid username/email or password.</div>
+            }
+
+            <form method="post" action="/auth/login">
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+                <div class="mb-3">
+                    <label class="form-label">Email or Username</label>
+                    <input class="form-control" name="email" autocomplete="username" required />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input class="form-control" type="password" name="password" autocomplete="current-password" required />
+                </div>
+
+                <button class="btn btn-primary w-100" type="submit">Sign In</button>
+            </form>
+
+            <div class="small text-muted mt-3">
+                Default admin login: admin@shifts.local / Admin@123
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool HasError;
+    private string ReturnUrl = "/";
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        HasError = query.TryGetValue("error", out var error) && error == "1";
+
+        if (query.TryGetValue("returnUrl", out var returnUrl) && !string.IsNullOrWhiteSpace(returnUrl))
+        {
+            ReturnUrl = returnUrl.ToString();
+        }
+    }
+}

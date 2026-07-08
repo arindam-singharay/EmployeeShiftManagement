@@ -1,0 +1,430 @@
+﻿@page "/"
+@attribute [Authorize]
+@inject IEmployeeService EmployeeService
+@inject IShiftService ShiftService
+
+<PageTitle>Dashboard</PageTitle>
+
+<section class="exec-hero">
+	<div>
+		<h1>Executive Workforce Command Center</h1>
+		<p>Monitor coverage, drill down by department and shift type, and spot scheduling pressure before it escalates.</p>
+	</div>
+	<div class="exec-month-pill">@currentMonthLabel</div>
+</section>
+
+@if (isLoading)
+{
+	<div class="card-soft p-3">Loading dashboard...</div>
+}
+else
+{
+	<div class="exec-metrics mt-3">
+		<article class="metric-card">
+			<span>Total Employees</span>
+			<strong>@employeeCount</strong>
+			<small>@activeEmployeeCount active</small>
+		</article>
+		<article class="metric-card">
+			<span>Monthly Assignments</span>
+			<strong>@monthlyShiftCount</strong>
+			<small>@coverageRate.ToString("0.0")% calendar coverage</small>
+		</article>
+		<article class="metric-card">
+			<span>Worked Hours</span>
+			<strong>@monthlyHours.ToString("0.#")</strong>
+			<small>@avgHoursPerEmployee.ToString("0.#") avg per active employee</small>
+		</article>
+		<article class="metric-card">
+			<span>Most Loaded Dept</span>
+			<strong>@topDepartmentName</strong>
+			<small>@topDepartmentHours.ToString("0.#") hrs this month</small>
+		</article>
+	</div>
+
+	<div class="exec-grid mt-3">
+		<section class="card-soft chart-card">
+			<header>
+				<h4>Department Workload</h4>
+				<span>Click a bar to drill down</span>
+			</header>
+
+			@if (departmentStats.Count == 0)
+			{
+				<p class="muted mb-0">No workload data available for this month.</p>
+			}
+			else
+			{
+				<div class="bar-stack">
+					@foreach (var stat in departmentStats)
+					{
+						<button class="bar-row @(selectedDepartment == stat.Name ? "is-active" : string.Empty)"
+								type="button"
+								@onclick="() => SelectDepartment(stat.Name)">
+							<span class="label">@stat.Name</span>
+							<span class="value">@stat.Hours.ToString("0.#")h</span>
+							<div class="bar-track">
+								<div class="bar-fill" style="width:@GetDepartmentWidth(stat.Hours)"></div>
+							</div>
+						</button>
+					}
+				</div>
+			}
+		</section>
+
+		<section class="card-soft chart-card">
+			<header>
+				<h4>Shift Composition</h4>
+				<span>Select a shift to drill into weekday demand</span>
+			</header>
+
+			@if (shiftTypeStats.Count == 0)
+			{
+				<p class="muted mb-0">No shift mix available for this month.</p>
+			}
+			else
+			{
+				<div class="mix-layout">
+					<div class="donut-shell">
+						<div class="donut-chart" style="@GetDonutStyle()"></div>
+						<div class="donut-center">@monthlyShiftCount</div>
+					</div>
+					<div class="legend-list">
+						@foreach (var shift in shiftTypeStats)
+						{
+							<button class="legend-item @(selectedShiftType == shift.Name ? "is-active" : string.Empty)"
+									type="button"
+									@onclick="() => SelectShiftType(shift.Name)">
+								<span class="dot" style="background:@shift.Color"></span>
+								<span>@shift.Name</span>
+								<strong>@shift.Count</strong>
+							</button>
+						}
+					</div>
+				</div>
+			}
+		</section>
+
+		<section class="card-soft chart-card full-width">
+			<header>
+				<h4>Weekly Throughput</h4>
+				<span>Week-by-week assignments in current month</span>
+			</header>
+
+			@if (weekStats.Count == 0)
+			{
+				<p class="muted mb-0">No weekly trend data available.</p>
+			}
+			else
+			{
+				<div class="week-grid">
+					@foreach (var week in weekStats)
+					{
+						<button class="week-col @(selectedWeekNumber == week.WeekNumber ? "is-active" : string.Empty)"
+								type="button"
+								@onclick="() => SelectWeek(week.WeekNumber)">
+							<span class="week-label">W@week.WeekNumber</span>
+							<div class="week-track">
+								<div class="week-fill" style="height:@GetWeekHeight(week.Assignments)"></div>
+							</div>
+							<strong>@week.Assignments</strong>
+						</button>
+					}
+				</div>
+			}
+		</section>
+
+		<section class="card-soft chart-card">
+			<header>
+				<h4>@selectedDepartment Workload Drill-down</h4>
+				<span>Top employees by worked hours</span>
+			</header>
+
+			@if (departmentDrilldown.Count == 0)
+			{
+				<p class="muted mb-0">No employee data for the selected department.</p>
+			}
+			else
+			{
+				<ul class="drill-list">
+					@foreach (var item in departmentDrilldown)
+					{
+						<li>
+							<span>@item.EmployeeName</span>
+							<strong>@item.Hours.ToString("0.#")h</strong>
+						</li>
+					}
+				</ul>
+			}
+		</section>
+
+		<section class="card-soft chart-card">
+			<header>
+				<h4>@selectedShiftType Demand Drill-down</h4>
+				<span>Assignments by weekday</span>
+			</header>
+
+			@if (shiftDayDrilldown.Count == 0)
+			{
+				<p class="muted mb-0">No weekday demand data for the selected shift.</p>
+			}
+			else
+			{
+				<ul class="drill-list compact">
+					@foreach (var day in shiftDayDrilldown)
+					{
+						<li>
+							<span>@day.Label</span>
+							<strong>@day.Assignments</strong>
+						</li>
+					}
+				</ul>
+			}
+		</section>
+
+		<section class="card-soft chart-card full-width">
+			<header>
+				<h4>Week @selectedWeekNumber Drill-down</h4>
+				<span>Day-level assignments for selected week</span>
+			</header>
+
+			@if (weekDayDrilldown.Count == 0)
+			{
+				<p class="muted mb-0">No assignments available in this week.</p>
+			}
+			else
+			{
+				<div class="week-day-grid">
+					@foreach (var day in weekDayDrilldown)
+					{
+						<article>
+							<span>@day.Label</span>
+							<strong>@day.Assignments</strong>
+							<small>@day.Hours.ToString("0.#")h</small>
+						</article>
+					}
+				</div>
+			}
+		</section>
+	</div>
+}
+
+@code {
+	private static readonly string[] ShiftPalette = ["#1f7a5a", "#2f9e79", "#4fa7d8", "#f3a64f", "#d86b86", "#6f6ad7"];
+	private static readonly Dictionary<DayOfWeek, string> DayLabels = new()
+	{
+		[DayOfWeek.Monday] = "Mon",
+		[DayOfWeek.Tuesday] = "Tue",
+		[DayOfWeek.Wednesday] = "Wed",
+		[DayOfWeek.Thursday] = "Thu",
+		[DayOfWeek.Friday] = "Fri",
+		[DayOfWeek.Saturday] = "Sat",
+		[DayOfWeek.Sunday] = "Sun"
+	};
+
+	private bool isLoading = true;
+	private int employeeCount;
+	private int activeEmployeeCount;
+	private int monthlyShiftCount;
+	private double monthlyHours;
+	private double coverageRate;
+	private double avgHoursPerEmployee;
+	private string topDepartmentName = "N/A";
+	private double topDepartmentHours;
+	private string currentMonthLabel = string.Empty;
+
+	private string selectedDepartment = "All Departments";
+	private string selectedShiftType = "All Shifts";
+	private int selectedWeekNumber;
+
+	private Dictionary<Guid, EmployeeModel> employeesById = [];
+	private List<ShiftModel> monthShifts = [];
+	private List<DepartmentStat> departmentStats = [];
+	private List<ShiftTypeStat> shiftTypeStats = [];
+	private List<WeekStat> weekStats = [];
+	private List<DepartmentEmployeeStat> departmentDrilldown = [];
+	private List<DayDemandStat> shiftDayDrilldown = [];
+	private List<WeekDayStat> weekDayDrilldown = [];
+
+	protected override async Task OnInitializedAsync()
+	{
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		currentMonthLabel = today.ToString("MMMM yyyy");
+
+		var employees = (await EmployeeService.GetAllAsync()).ToList();
+		monthShifts = (await ShiftService.GetByMonthAsync(today.Year, today.Month)).ToList();
+		employeesById = employees.ToDictionary(x => x.Id);
+
+		employeeCount = employees.Count;
+		activeEmployeeCount = employees.Count(x => x.IsActive);
+		monthlyShiftCount = monthShifts.Count;
+		monthlyHours = monthShifts.Sum(x => x.WorkedHours);
+
+		var daysInMonth = DateTime.DaysInMonth(today.Year, today.Month);
+		var potentialAssignments = Math.Max(1, activeEmployeeCount * daysInMonth);
+		coverageRate = (monthlyShiftCount * 100.0) / potentialAssignments;
+		avgHoursPerEmployee = activeEmployeeCount == 0 ? 0 : monthlyHours / activeEmployeeCount;
+
+		BuildDepartmentStats();
+		BuildShiftTypeStats();
+		BuildWeekStats();
+
+		selectedDepartment = departmentStats.FirstOrDefault()?.Name ?? "All Departments";
+		selectedShiftType = shiftTypeStats.FirstOrDefault()?.Name ?? "All Shifts";
+		selectedWeekNumber = weekStats.FirstOrDefault()?.WeekNumber ?? 1;
+
+		BuildDepartmentDrilldown();
+		BuildShiftDayDrilldown();
+		BuildWeekDayDrilldown();
+
+		isLoading = false;
+	}
+
+	private void BuildDepartmentStats()
+	{
+		departmentStats = monthShifts
+			.GroupBy(GetDepartmentName)
+			.Select(group => new DepartmentStat(
+				group.Key,
+				group.Count(),
+				group.Sum(x => x.WorkedHours),
+				group.Select(x => x.EmployeeId).Distinct().Count()))
+			.OrderByDescending(x => x.Hours)
+			.ToList();
+
+		var top = departmentStats.FirstOrDefault();
+		topDepartmentName = top?.Name ?? "N/A";
+		topDepartmentHours = top?.Hours ?? 0;
+	}
+
+	private void BuildShiftTypeStats()
+	{
+		shiftTypeStats = monthShifts
+			.GroupBy(x => string.IsNullOrWhiteSpace(x.ShiftName) ? "Unspecified" : x.ShiftName)
+			.Select((group, index) => new ShiftTypeStat(
+				group.Key,
+				group.Count(),
+				group.Sum(x => x.WorkedHours),
+				ShiftPalette[index % ShiftPalette.Length]))
+			.OrderByDescending(x => x.Count)
+			.ToList();
+	}
+
+	private void BuildWeekStats()
+	{
+		weekStats = monthShifts
+			.GroupBy(x => ((x.ShiftDate.Day - 1) / 7) + 1)
+			.Select(group => new WeekStat(
+				group.Key,
+				group.Count(),
+				group.Sum(x => x.WorkedHours)))
+			.OrderBy(x => x.WeekNumber)
+			.ToList();
+	}
+
+	private void SelectDepartment(string name)
+	{
+		selectedDepartment = name;
+		BuildDepartmentDrilldown();
+	}
+
+	private void SelectShiftType(string name)
+	{
+		selectedShiftType = name;
+		BuildShiftDayDrilldown();
+	}
+
+	private void SelectWeek(int weekNumber)
+	{
+		selectedWeekNumber = weekNumber;
+		BuildWeekDayDrilldown();
+	}
+
+	private void BuildDepartmentDrilldown()
+	{
+		departmentDrilldown = monthShifts
+			.Where(x => string.Equals(GetDepartmentName(x), selectedDepartment, StringComparison.OrdinalIgnoreCase))
+			.GroupBy(x => x.EmployeeName)
+			.Select(group => new DepartmentEmployeeStat(group.Key, group.Sum(x => x.WorkedHours)))
+			.OrderByDescending(x => x.Hours)
+			.Take(6)
+			.ToList();
+	}
+
+	private void BuildShiftDayDrilldown()
+	{
+		shiftDayDrilldown = monthShifts
+			.Where(x => string.Equals(x.ShiftName, selectedShiftType, StringComparison.OrdinalIgnoreCase))
+			.GroupBy(x => x.ShiftDate.DayOfWeek)
+			.Select(group => new DayDemandStat(group.Key, DayLabels[group.Key], group.Count()))
+			.OrderBy(x => ToIsoWeekDay(x.Day))
+			.ToList();
+	}
+
+	private void BuildWeekDayDrilldown()
+	{
+		weekDayDrilldown = monthShifts
+			.Where(x => ((x.ShiftDate.Day - 1) / 7) + 1 == selectedWeekNumber)
+			.GroupBy(x => x.ShiftDate.DayOfWeek)
+			.Select(group => new WeekDayStat(
+				group.Key,
+				DayLabels[group.Key],
+				group.Count(),
+				group.Sum(x => x.WorkedHours)))
+			.OrderBy(x => ToIsoWeekDay(x.Day))
+			.ToList();
+	}
+
+	private string GetDepartmentName(ShiftModel shift)
+	{
+		return employeesById.TryGetValue(shift.EmployeeId, out var employee)
+			? employee.Department
+			: "Unassigned Dept";
+	}
+
+	private string GetDepartmentWidth(double hours)
+	{
+		var max = Math.Max(1, departmentStats.Max(x => x.Hours));
+		return $"{(hours / max) * 100:0.#}%";
+	}
+
+	private string GetWeekHeight(int assignments)
+	{
+		var max = Math.Max(1, weekStats.Max(x => x.Assignments));
+		return $"{(assignments / (double)max) * 100:0.#}%";
+	}
+
+	private string GetDonutStyle()
+	{
+		if (shiftTypeStats.Count == 0)
+		{
+			return "background: conic-gradient(#dfe9e3 0% 100%);";
+		}
+
+		var total = Math.Max(1, shiftTypeStats.Sum(x => x.Count));
+		var segments = new List<string>();
+		double cursor = 0;
+
+		foreach (var item in shiftTypeStats)
+		{
+			var size = (item.Count / (double)total) * 100;
+			var end = cursor + size;
+			segments.Add($"{item.Color} {cursor:0.##}% {end:0.##}%");
+			cursor = end;
+		}
+
+		return $"background: conic-gradient({string.Join(", ", segments)});";
+	}
+
+	private static int ToIsoWeekDay(DayOfWeek day)
+	{
+		return day == DayOfWeek.Sunday ? 7 : (int)day;
+	}
+
+	private sealed record DepartmentStat(string Name, int Assignments, double Hours, int Employees);
+	private sealed record ShiftTypeStat(string Name, int Count, double Hours, string Color);
+	private sealed record WeekStat(int WeekNumber, int Assignments, double Hours);
+	private sealed record DepartmentEmployeeStat(string EmployeeName, double Hours);
+	private sealed record DayDemandStat(DayOfWeek Day, string Label, int Assignments);
+	private sealed record WeekDayStat(DayOfWeek Day, string Label, int Assignments, double Hours);
+}

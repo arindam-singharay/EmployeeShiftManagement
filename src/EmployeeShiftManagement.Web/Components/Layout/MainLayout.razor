@@ -1,0 +1,45 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="title-block">
+                <strong>Employee Shift Management</strong>
+               @*  <div class="subtitle">Blazor + Clean Architecture</div> *@
+            </div>
+
+            <AuthorizeView>
+                <Authorized>
+                    <details class="account-menu">
+                        <summary>
+                            <span class="avatar-dot"></span>
+                            <span>@(context.User.Identity?.Name ?? "User")</span>
+                        </summary>
+                        <div class="account-popover">
+                            <a href="/auth/logout">Logout</a>
+                        </div>
+                    </details>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="btn btn-sm btn-primary" href="/login">Login</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<ToastHost />
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

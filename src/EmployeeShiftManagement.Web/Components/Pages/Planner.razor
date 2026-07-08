@@ -1,0 +1,442 @@
+@page "/planner"
+@attribute [Authorize]
+@inject IShiftService ShiftService
+@inject IEmployeeService EmployeeService
+@inject ToastService ToastService
+@rendermode InteractiveServer
+
+<PageTitle>Shift Planner</PageTitle>
+
+<div class="calendar-shell card-soft p-3 p-lg-4 mb-3">
+    <div class="calendar-topbar mb-3">
+        <div>
+            <h1 class="section-title mb-1">Shift Calendar Planner</h1>
+            <div class="muted">Assign master shifts to multiple employees across a date range.</div>
+        </div>
+        <div class="calendar-stats">
+            <div class="stat-item">
+                <span class="stat-label">Assignments</span>
+                <strong>@shifts.Count</strong>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Employees</span>
+                <strong>@shifts.Select(x => x.EmployeeId).Distinct().Count()</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="calendar-nav mb-3">
+        <button class="btn btn-outline-primary" @onclick="PreviousMonth">Previous</button>
+        <h4 class="calendar-title">@currentMonth.ToString("MMMM yyyy")</h4>
+        <button class="btn btn-outline-primary" @onclick="NextMonth">Next</button>
+    </div>
+
+    <div class="planner-grid">
+        @foreach (var dayName in dayHeaders)
+        {
+            <div class="planner-header">@dayName</div>
+        }
+
+        @foreach (var day in calendarDays)
+        {
+            var isCurrentMonth = day.Month == currentMonth.Month;
+            var isToday = day == DateOnly.FromDateTime(DateTime.Today);
+            var dayShifts = shifts.Where(x => x.ShiftDate == day).ToList();
+            var shiftGroups = dayShifts
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.ShiftName) ? "Unnamed" : x.ShiftName)
+                .OrderBy(x => x.Key)
+                .ToList();
+
+            <div class="planner-cell @(isCurrentMonth ? string.Empty : "muted-cell") @(isToday ? "today-cell" : string.Empty)">
+                <div class="cell-head">
+                    <div class="cell-date">@day.Day</div>
+                    @if (isToday)
+                    {
+                        <span class="today-pill">Today</span>
+                    }
+                </div>
+
+                <button class="create-on-hover"
+                        type="button"
+                        @onclick="() => OpenCreateModal(day)"
+                        disabled="@(!employees.Any() || !shiftDefinitions.Any())">
+                    + Assign Shift
+                </button>
+
+                <div class="shift-buckets">
+                    @if (shiftGroups.Count == 0)
+                    {
+                        <div class="bucket-empty">No shifts</div>
+                    }
+                    else
+                    {
+                        @foreach (var group in shiftGroups.Take(3))
+                        {
+                            <button type="button" class="bucket-item" @onclick="() => OpenShiftWorkersModal(day, group.Key)">
+                                <span class="bucket-name">@group.Key</span>
+                                <strong>@group.Count()</strong>
+                            </button>
+                        }
+
+                        @if (shiftGroups.Count > 3)
+                        {
+                            <div class="bucket-more">+@(shiftGroups.Count - 3) more shift types</div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (showWorkersModal)
+{
+    <div class="modal-backdrop-soft" @onclick="CloseWorkersModal">
+        <div class="modal-shell" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">@workersModalShiftName Workers - @workersModalDate.ToString("yyyy-MM-dd")</h5>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="CloseWorkersModal">Close</button>
+            </div>
+
+            @if (modalShiftWorkers.Count == 0)
+            {
+                <div class="alert alert-info mb-0">No employees assigned for this shift.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Time</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var shift in modalShiftWorkers)
+                            {
+                                <tr>
+                                    <td>@shift.EmployeeName</td>
+                                    <td>@shift.StartTime.ToString("HH:mm") - @shift.EndTime.ToString("HH:mm")</td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => EditFromWorkersModal(shift)">Edit</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (showShiftModal)
+{
+    <div class="modal-backdrop-soft" @onclick="CloseShiftModal">
+        <div class="modal-shell" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">@(isEditMode ? "Update Assignment" : "Assign Shift")</h5>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="CloseShiftModal">Close</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="alert alert-danger">@errorMessage</div>
+            }
+
+            <EditForm Model="form" OnValidSubmit="SaveShiftAsync">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label">Shift</label>
+                        <InputSelect class="form-select" @bind-Value="form.ShiftDefinitionId">
+                            @foreach (var definition in shiftDefinitions.Where(x => x.IsActive || x.Id == form.ShiftDefinitionId))
+                            {
+                                <option value="@definition.Id">@definition.Name (@definition.StartTime.ToString("HH:mm")-@definition.EndTime.ToString("HH:mm"))</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    @if (isEditMode)
+                    {
+                        <div class="col-md-3">
+                            <label class="form-label">Date</label>
+                            <InputDate class="form-control" @bind-Value="form.FromDate" />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Employee</label>
+                            <InputSelect class="form-select" @bind-Value="form.EmployeeId">
+                                @foreach (var employee in employees)
+                                {
+                                    <option value="@employee.Id">@employee.FullName (@employee.EmployeeCode)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="col-md-3">
+                            <label class="form-label">From</label>
+                            <InputDate class="form-control" @bind-Value="form.FromDate" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">To</label>
+                            <InputDate class="form-control" @bind-Value="form.ToDate" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Employees</label>
+                            <div class="multi-employee-box">
+                                <input class="form-control form-control-sm mb-2" placeholder="Search employee..." @bind="employeeSearch" />
+                                @foreach (var employee in FilteredEmployees())
+                                {
+                                    var isChecked = form.SelectedEmployeeIds.Contains(employee.Id);
+                                    <label class="employee-check-row">
+                                        <input type="checkbox" checked="@isChecked" @onchange="args => ToggleEmployeeSelection(employee.Id, args.Value)" />
+                                        <span>@employee.FullName (@employee.EmployeeCode)</span>
+                                    </label>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="col-md-12">
+                        <label class="form-label">Notes</label>
+                        <InputText class="form-control" @bind-Value="form.Notes" />
+                    </div>
+                </div>
+
+                <div class="mt-3 d-flex justify-content-end gap-2">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseShiftModal">Cancel</button>
+                    <button class="btn btn-primary" type="submit">@(isEditMode ? "Update" : "Apply")</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly string[] dayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    private DateOnly currentMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private List<DateOnly> calendarDays = [];
+    private List<ShiftModel> shifts = [];
+    private List<EmployeeModel> employees = [];
+    private List<ShiftDefinitionModel> shiftDefinitions = [];
+    private ShiftForm form = new();
+    private string? errorMessage;
+    private bool showShiftModal;
+    private bool isEditMode;
+    private bool showWorkersModal;
+    private DateOnly workersModalDate;
+    private string workersModalShiftName = string.Empty;
+    private List<ShiftModel> modalShiftWorkers = [];
+    private string employeeSearch = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        employees = (await EmployeeService.GetAllAsync()).ToList();
+        shiftDefinitions = (await ShiftService.GetShiftDefinitionsAsync()).ToList();
+
+        BuildCalendar();
+        await LoadMonthShiftsAsync();
+    }
+
+    private async Task SaveShiftAsync()
+    {
+        errorMessage = null;
+
+        if (form.ShiftDefinitionId == Guid.Empty)
+        {
+            errorMessage = "Please select a shift.";
+            return;
+        }
+
+        try
+        {
+            if (isEditMode)
+            {
+                if (form.EmployeeId == Guid.Empty)
+                {
+                    errorMessage = "Please select an employee.";
+                    return;
+                }
+
+                await ShiftService.UpsertAsync(new UpsertShiftRequest(
+                    form.ShiftId,
+                    form.ShiftDefinitionId,
+                    form.EmployeeId,
+                    form.FromDate,
+                    form.Notes));
+
+                ToastService.Success("Assignment updated successfully.");
+            }
+            else
+            {
+                if (form.SelectedEmployeeIds.Count == 0)
+                {
+                    errorMessage = "Select at least one employee.";
+                    return;
+                }
+
+                var applied = await ShiftService.ApplyForDateRangeAsync(new ApplyShiftRangeRequest(
+                    form.ShiftDefinitionId,
+                    form.FromDate,
+                    form.ToDate,
+                    form.SelectedEmployeeIds,
+                    form.Notes));
+
+                ToastService.Success($"Applied {applied} assignment(s).");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            ToastService.Error(ex.Message);
+            return;
+        }
+
+        CloseShiftModal();
+        await LoadMonthShiftsAsync();
+    }
+
+    private IEnumerable<EmployeeModel> FilteredEmployees()
+    {
+        if (string.IsNullOrWhiteSpace(employeeSearch))
+        {
+            return employees;
+        }
+
+        return employees.Where(x =>
+            x.FullName.Contains(employeeSearch, StringComparison.OrdinalIgnoreCase)
+            || x.EmployeeCode.Contains(employeeSearch, StringComparison.OrdinalIgnoreCase)
+            || x.Department.Contains(employeeSearch, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task LoadMonthShiftsAsync()
+    {
+        shifts = (await ShiftService.GetByMonthAsync(currentMonth.Year, currentMonth.Month)).ToList();
+    }
+
+    private void BuildCalendar()
+    {
+        var firstDay = currentMonth;
+        var start = firstDay.AddDays(-(int)firstDay.DayOfWeek);
+        calendarDays = Enumerable.Range(0, 42)
+            .Select(offset => start.AddDays(offset))
+            .ToList();
+    }
+
+    private async Task PreviousMonth()
+    {
+        currentMonth = currentMonth.AddMonths(-1);
+        BuildCalendar();
+        await LoadMonthShiftsAsync();
+    }
+
+    private async Task NextMonth()
+    {
+        currentMonth = currentMonth.AddMonths(1);
+        BuildCalendar();
+        await LoadMonthShiftsAsync();
+    }
+
+    private void OpenCreateModal(DateOnly day)
+    {
+        selectedDate = day;
+        isEditMode = false;
+        errorMessage = null;
+        employeeSearch = string.Empty;
+
+        var defaultShiftId = shiftDefinitions.FirstOrDefault(x => x.IsActive)?.Id ?? Guid.Empty;
+
+        form = new ShiftForm
+        {
+            ShiftDefinitionId = defaultShiftId,
+            FromDate = day,
+            ToDate = day,
+            SelectedEmployeeIds = [],
+            Notes = string.Empty,
+            ShiftId = null
+        };
+
+        showShiftModal = true;
+    }
+
+    private void OpenEditModal(ShiftModel shift)
+    {
+        selectedDate = shift.ShiftDate;
+        isEditMode = true;
+        errorMessage = null;
+
+        form = new ShiftForm
+        {
+            ShiftId = shift.Id,
+            ShiftDefinitionId = shift.ShiftDefinitionId,
+            EmployeeId = shift.EmployeeId,
+            FromDate = shift.ShiftDate,
+            ToDate = shift.ShiftDate,
+            SelectedEmployeeIds = [shift.EmployeeId],
+            Notes = shift.Notes
+        };
+
+        showShiftModal = true;
+    }
+
+    private void CloseShiftModal()
+    {
+        showShiftModal = false;
+        errorMessage = null;
+    }
+
+    private void OpenShiftWorkersModal(DateOnly day, string shiftName)
+    {
+        workersModalDate = day;
+        workersModalShiftName = shiftName;
+        modalShiftWorkers = shifts
+            .Where(x => x.ShiftDate == day && string.Equals(x.ShiftName, shiftName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.StartTime)
+            .ThenBy(x => x.EmployeeName)
+            .ToList();
+        showWorkersModal = true;
+    }
+
+    private void CloseWorkersModal()
+    {
+        showWorkersModal = false;
+        modalShiftWorkers = [];
+    }
+
+    private void EditFromWorkersModal(ShiftModel shift)
+    {
+        showWorkersModal = false;
+        OpenEditModal(shift);
+    }
+
+    private void ToggleEmployeeSelection(Guid employeeId, object? value)
+    {
+        var isChecked = value is bool b && b;
+
+        if (isChecked)
+        {
+            if (!form.SelectedEmployeeIds.Contains(employeeId))
+            {
+                form.SelectedEmployeeIds.Add(employeeId);
+            }
+        }
+        else
+        {
+            form.SelectedEmployeeIds.Remove(employeeId);
+        }
+    }
+
+    private sealed class ShiftForm
+    {
+        public Guid? ShiftId { get; set; }
+        public Guid ShiftDefinitionId { get; set; }
+        public Guid EmployeeId { get; set; }
+        public DateOnly FromDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly ToDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public List<Guid> SelectedEmployeeIds { get; set; } = [];
+        public string Notes { get; set; } = string.Empty;
+    }
+}

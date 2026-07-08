@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EmployeeShiftManagement.Application/EmployeeShiftManagement.Application.csproj" />
+    <Project Path="src/EmployeeShiftManagement.Domain/EmployeeShiftManagement.Domain.csproj" />
+    <Project Path="src/EmployeeShiftManagement.Infrastructure/EmployeeShiftManagement.Infrastructure.csproj" />
+    <Project Path="src/EmployeeShiftManagement.Web/EmployeeShiftManagement.Web.csproj" />
+  </Folder>
+</Solution>

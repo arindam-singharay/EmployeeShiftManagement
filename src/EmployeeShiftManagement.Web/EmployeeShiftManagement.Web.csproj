@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <None Include="C:\Users\sumit\AppData\Roaming\Code\User\workspaceStorage\4494df6f1d9f8fc3df0eb63babe03bca\GitHub.copilot-chat\memory-tool\memories\M2Y2ODlhNzEtZmNmZC00YmYzLWIxYWEtZDI4Y2UwMTcxNTUy\plan.md" Link="plan.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EmployeeShiftManagement.Application\EmployeeShiftManagement.Application.csproj" />
+    <ProjectReference Include="..\EmployeeShiftManagement.Infrastructure\EmployeeShiftManagement.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+</Project>
