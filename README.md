@@ -134,7 +134,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For issues, questions, or feature requests:
 - Open an issue on GitHub
-- Contact: support@yourcompany.com
+- Contact: sinharay.arindam@gmail.com
 - Documentation: [Wiki](../../wiki)
 
 ---
